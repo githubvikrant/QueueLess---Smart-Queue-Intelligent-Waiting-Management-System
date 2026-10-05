@@ -20,6 +20,7 @@ from app.core.errors import QueueError
 from app.db.session import SessionLocal, init_db
 from app.realtime import sio
 from app.seeding.seeder import ensure_seeded
+from app.spa import mount_frontend
 import socketio
 
 
@@ -98,6 +99,10 @@ def health():
 
 # Include Member 3's API router
 api.include_router(api_router)
+
+# Production: built frontend (frontend/dist) isi server se serve hoga.
+# Ye hamesha saare routes ke BAAD aana chahiye.
+mount_frontend(api)
 
 # FastAPI aur Socket.IO ek hi server pe
 app = socketio.ASGIApp(sio, other_asgi_app=api)
