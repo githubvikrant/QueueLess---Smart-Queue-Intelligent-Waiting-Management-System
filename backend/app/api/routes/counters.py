@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import correlation_id
 from app.db.session import get_db
-from app.schemas.api import CounterCreate, CounterOut, TokenOut
+from app.schemas.api import CounterCreate, CounterOut, QueueOut, TokenOut
 from app.services import lifecycle, presenter
 from app.services.publisher import publish_queue
 
@@ -49,3 +49,14 @@ async def call_next(code: str, db: Session = Depends(get_db), corr: str = Depend
     token = lifecycle.call_next(db, code, corr)
     await publish_queue(db, corr, f"{token.code} called")
     return presenter.token_view(db, token.code)
+
+
+@router.post("/{code}/advance", response_model=QueueOut)
+async def advance_counter(code: str, db: Session = Depends(get_db), corr: str = Depends(correlation_id)):
+    """
+    One-click advance: complete current patient (if any) + call next + auto-start.
+    Manager sirf yeh ek button dabaye — baki sab automatic.
+    """
+    lifecycle.advance_counter(db, code, corr)
+    await publish_queue(db, corr, f"Counter {code.upper()} advanced")
+    return presenter.build_queue_view(db)

@@ -122,3 +122,15 @@ npm run dev                 # runs on http://localhost:3000
 ## Track
 
 Open Innovation / Everyday Automation
+
+
+
+#how to start the backend 
+
+cd c:\Users\DELL\OneDrive\Documents\QueueLess\backend
+.\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+
+
+#backend health
+
+http://localhost:8000/api/health

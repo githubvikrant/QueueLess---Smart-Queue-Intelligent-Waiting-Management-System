@@ -263,3 +263,56 @@ def open_counter(db: Session, code: str, corr: str) -> Counter:
     log_event(db, "counter.opened", corr, None, counter, {"counter": counter.code, "placed": placed})
     db.commit()
     return counter
+
+
+# ---------- one-click advance (prototype) ----------
+def advance_counter(db: Session, counter_code: str, corr: str) -> None:
+    """
+    One-click flow for prototype: minimal human interference.
+    1. Complete whoever is currently called/in_service on this counter.
+    2. Call the next waiting patient.
+    3. Immediately start their service (skip the 'called' limbo).
+    """
+    counter = get_counter(db, counter_code)
+
+    # Step 1: complete/dismiss the active token (called or in_service)
+    active = db.scalar(select(Token).where(
+        Token.counter_id == counter.id,
+        Token.status.in_(state_machine.ACTIVE),
+    ))
+    if active:
+        now = clock.now()
+        active.status = S.COMPLETED
+        active.completed_at = now
+        started = clock.as_utc(active.started_at)
+        active.actual_duration_min = round((now - started).total_seconds() / 60, 2) if started else None
+        counter.injected_delay_min = 0.0
+        log_event(db, "token.completed", corr, active, counter, {
+            "token_code": active.code, "actual_duration_min": active.actual_duration_min,
+        })
+        db.flush()
+
+    # Step 2: find next waiting patient on this counter
+    waiting = db.scalars(select(Token).where(
+        Token.counter_id == counter.id,
+        Token.status == S.WAITING,
+    )).all()
+    if not waiting:
+        db.commit()
+        return
+
+    next_token = min(waiting, key=lambda t: (-t.priority, clock.as_utc(t.created_at), t.code))
+
+    # Step 3: call + immediately start (skip manual 'called' step)
+    now = clock.now()
+    next_token.status = S.IN_SERVICE
+    next_token.called_at = now
+    next_token.started_at = now
+    next_token.last_change_reason = None
+    log_event(db, "token.called", corr, next_token, counter, {
+        "token_code": next_token.code, "counter": counter.code,
+    })
+    log_event(db, "token.service_started", corr, next_token, counter, {
+        "token_code": next_token.code, "counter": counter.code,
+    })
+    db.commit()
